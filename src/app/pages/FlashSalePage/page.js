@@ -77,7 +77,7 @@ export default function FlashSalePage() {
     <div className="bg-white min-h-screen font-poppins">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-7xl">
         {/* Header */}
-        <motion.header
+        {/* <motion.header
           className="sticky top-0 z-20 bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-sm py-4 mb-8 rounded-b-lg"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -105,7 +105,7 @@ export default function FlashSalePage() {
               <span className="text-sm font-medium hidden sm:inline">Filter & Sort</span>
             </motion.button>
           </div>
-        </motion.header>
+        </motion.header> */}
 
         {/* Products Grid or No Products */}
         {products.length === 0 ? (

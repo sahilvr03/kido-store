@@ -378,7 +378,7 @@ export default function HomePage() {
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.6 }}
                   >
-                    <Link href="/products">
+                    <Link href="/pages/ForYouPage">
                       <button className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold px-6 py-3 rounded-lg transition-all duration-300 shadow-md flex items-center">
                         Shop Now
                         <ArrowRight className="ml-2 h-4 w-4" />
