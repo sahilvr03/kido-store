@@ -7,7 +7,7 @@ import Footer from './components/footer';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
-  title: 'DropWear',
+  title: 'Kiddo-Store',
   description: 'E-commerce platform with great deals',
 };
 
