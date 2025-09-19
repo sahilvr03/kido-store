@@ -16,14 +16,14 @@ export default function Sidebar({ isOpen, setIsOpen }) {
       {/* Toggle Button for Mobile */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 bg-white/20 backdrop-blur-lg p-2 rounded-full shadow-md text-white"
+        className="lg:hidden fixed  top-8 left-4 z-100 bg-white/20 backdrop-blur-lg p-2 rounded-full shadow-md text-white"
       >
         {isOpen ? <FiX size={20} /> : <FiMenu size={20} />}
       </button>
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 transform ${
+        className={`fixed top-0 left-0 mt-20 h-full w-64 transform ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } transition-transform duration-300 ease-in-out bg-gradient-to-br from-gray-800 via-gray-700 to-gray-800 bg-opacity-80 backdrop-blur-lg shadow-xl text-white rounded-r-xl z-40`}
       >

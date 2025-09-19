@@ -34,7 +34,6 @@ export default function HomePage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [flashSaleItems, setFlashSaleItems] = useState([]);
-  const [recommendedItems, setRecommendedItems] = useState([]);
   const [forYouItems, setForYouItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [current, setCurrent] = useState(0);
@@ -43,21 +42,10 @@ export default function HomePage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState({
     flashSales: true,
-    recommended: true,
     forYou: true,
     categories: true,
   });
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [filteredRecommended, setFilteredRecommended] = useState([]);
   const router = useRouter();
-
-  useEffect(() => {
-    if (selectedCategory) {
-      setFilteredRecommended(recommendedItems.filter((product) => product.category === selectedCategory));
-    } else {
-      setFilteredRecommended(recommendedItems);
-    }
-  }, [selectedCategory, recommendedItems]);
 
   useEffect(() => {
     async function fetchData() {
@@ -230,33 +218,6 @@ export default function HomePage() {
         setLoading((prev) => ({ ...prev, flashSales: false }));
       }
       try {
-        const response = await fetch('/api/products?type=recommended');
-        const data = await response.json();
-        if (response.ok) {
-          setRecommendedItems(data.slice(0, 20));
-        } else {
-          throw new Error(data.error || 'Failed to fetch Recommended products');
-        }
-      } catch (error) {
-        console.error('Error fetching Recommended products:', error);
-        setError('Failed to load Recommended products. Please try again later.');
-        toast.error('Failed to load Recommended products', {
-          style: {
-            background: '#DBEAFE',
-            color: '#1E3A8A',
-            border: '2px solid #F97316',
-            borderRadius: '20px',
-            boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
-            fontFamily: 'Baloo 2, sans-serif',
-            fontWeight: '700',
-            padding: '12px 16px',
-          },
-          iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
-        });
-      } finally {
-        setLoading((prev) => ({ ...prev, recommended: false }));
-      }
-      try {
         const response = await fetch('/api/products?type=forYou');
         const data = await response.json();
         if (response.ok) {
@@ -322,10 +283,10 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen font-baloo  text-gray-800 m-0 p-0">
+    <div className="min-h-screen font-baloo text-gray-800 m-0 p-0">
       <Toaster />
-      <main className="w-full max-w-[2990px] mx-auto ">
-        <HeroCarousel promotions={promotions} current={current} setCurrent={setCurrent} />
+      <HeroCarousel promotions={promotions} current={current} setCurrent={setCurrent} />
+      <main className="w-full max-w-[1800px] container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-8xl">
         <ProductSection
           title="Flash Sale ⚡"
           items={flashSaleItems}
@@ -343,7 +304,6 @@ export default function HomePage() {
           error={error}
           link="/pages/ForYouPage"
           icon={<Heart className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500" />}
-        
         />
       </main>
     </div>

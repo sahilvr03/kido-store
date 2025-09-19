@@ -20,7 +20,7 @@ export default function ProductSection({ title, items, loading, error, link, ico
   const buttonTap = { scale: 0.9 };
 
   return (
-    <section className="mb-12 p-4 sm:p-6  font-baloo bg-gradient-to-l from-blue-100 to-white shadow-lg ">
+    <section className=" container mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-8xl  font-baloo">
       {/* Section Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
         <div className="flex items-center mb-4 sm:mb-0">
@@ -36,10 +36,10 @@ export default function ProductSection({ title, items, loading, error, link, ico
         {/* View All Button */}
         <Link
           href={link}
-          className="flex items-center border-2 border-blue-500 hover:bg-orange-100 text-blue-500 px-4 py-2 rounded-xl font-bold text-sm sm:text-base shadow-md hover:shadow-lg transition-all duration-300"
+          className="flex items-center border-2 border-blue-500 hover:bg-orange-100 text-blue-500 px-2 py-2 rounded-xl  text-sm sm:text-base shadow-md hover:shadow-lg transition-all duration-300"
         >
           <motion.div whileHover={buttonHover} whileTap={buttonTap}>
-            View All <ChevronRight className="ml-1 h-5 w-5" />
+            View All
           </motion.div>
         </Link>
       </div>

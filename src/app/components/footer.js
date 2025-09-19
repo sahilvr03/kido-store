@@ -141,7 +141,7 @@ export default function Footer() {
 
   return (
     <motion.footer
-      className="bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 border-t border-gray-200 dark:border-gray-800 py-10 sm:py-12 z-10 font-poppins"
+      className="bg-white dark:bg-blue-900 text-gray-600 dark:text-gray-300 border-t border-gray-200 dark:border-gray-800 py-10 sm:py-12 z-10 font-poppins"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, type: 'spring', stiffness: 300 }}

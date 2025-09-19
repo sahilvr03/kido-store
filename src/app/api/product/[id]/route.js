@@ -1,6 +1,24 @@
-// api/products/[id]/route.js
 import { connectToDatabase } from '../../../lib/mongodb';
 import { ObjectId } from 'mongodb';
+import jwt from 'jsonwebtoken';
+
+async function authenticate(req) {
+  const cookieHeader = req.headers.get('cookie') || '';
+  const tokenFromCookie = cookieHeader.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+  const token = req.headers.get('authorization')?.split('Bearer ')[1] || tokenFromCookie;
+
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded;
+  } catch (error) {
+    console.error('JWT verification error:', error.message);
+    return null;
+  }
+}
 
 export async function GET(req, { params }) {
   try {
@@ -18,9 +36,23 @@ export async function GET(req, { params }) {
 
 export async function PUT(request, { params }) {
   try {
+    const user = await authenticate(request);
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+
     const { db } = await connectToDatabase();
     const data = await request.json();
     const { _id, ...productData } = data;
+
+    const existingProduct = await db.collection('products').findOne({ _id: new ObjectId(params.id) });
+    if (!existingProduct) {
+      return new Response(JSON.stringify({ error: 'Product not found' }), { status: 404 });
+    }
+
+    if (user.role !== 'admin' && (existingProduct.userId ? existingProduct.userId.toString() !== user.id : true)) {
+      return new Response(JSON.stringify({ error: 'Unauthorized to update this product' }), { status: 403 });
+    }
 
     // Validate type field
     if (productData.type && !['forYou', 'recommended', 'flashSale'].includes(productData.type)) {
@@ -43,14 +75,21 @@ export async function PUT(request, { params }) {
       return new Response(JSON.stringify({ error: 'Colors must be an array' }), { status: 400 });
     }
 
-    // Optional: Validate category if present (assuming categories are strings)
+    // Optional: Validate category if present
     if (productData.category && typeof productData.category !== 'string') {
       return new Response(JSON.stringify({ error: 'Category must be a string' }), { status: 400 });
     }
 
+    // Preserve the existing userId unless the user is an admin
+    const updateData = {
+      ...productData,
+      userId: user.role === 'admin' ? null : existingProduct.userId || new ObjectId(user.id),
+      updatedAt: new Date(),
+    };
+
     const result = await db.collection('products').updateOne(
       { _id: new ObjectId(params.id) },
-      { $set: { ...productData, updatedAt: new Date() } }
+      { $set: updateData }
     );
 
     if (result.matchedCount === 0) {
@@ -67,7 +106,22 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
+    const user = await authenticate(request);
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+
     const { db } = await connectToDatabase();
+
+    const existingProduct = await db.collection('products').findOne({ _id: new ObjectId(params.id) });
+    if (!existingProduct) {
+      return new Response(JSON.stringify({ error: 'Product not found' }), { status: 404 });
+    }
+
+    if (user.role !== 'admin' && (existingProduct.userId ? existingProduct.userId.toString() !== user.id : true)) {
+      return new Response(JSON.stringify({ error: 'Unauthorized to delete this product' }), { status: 403 });
+    }
+
     const result = await db.collection('products').deleteOne({ _id: new ObjectId(params.id) });
 
     if (result.deletedCount === 0) {

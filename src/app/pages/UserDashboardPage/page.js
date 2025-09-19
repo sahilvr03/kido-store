@@ -1,3 +1,4 @@
+// pages/UserDashboardPage.jsx
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -6,8 +7,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Plus, Edit, Trash2, X, Loader2, Search, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import debounce from 'lodash/debounce';
+import OneSignal from 'react-onesignal';
+import { Dialog } from '@headlessui/react';
 
-export default function AdminPage() {
+export default function UserDashboardPage() {
   const [product, setProduct] = useState({
     title: '',
     price: '',
@@ -26,7 +29,6 @@ export default function AdminPage() {
     details: '',
     inStock: true,
   });
-  const [category, setCategory] = useState({ name: '', icon: '' });
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [products, setProducts] = useState([]);
@@ -34,21 +36,40 @@ export default function AdminPage() {
   const [categories, setCategories] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
   const [sessionChecked, setSessionChecked] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: 'title', direction: 'asc' });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [productSortConfig, setProductSortConfig] = useState({ key: 'title', direction: 'asc' });
+  const [productCurrentPage, setProductCurrentPage] = useState(1);
+  const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [orderActiveTab, setOrderActiveTab] = useState('all');
+  const [orderCurrentPage, setOrderCurrentPage] = useState(1);
+  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const itemsPerPage = 10;
+  const predefinedReasons = ["Changed mind", "Wrong item", "Found better price", "Other"];
   const router = useRouter();
 
+  // Initialize OneSignal and check session
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const response = await fetch('/api/auth/session', { credentials: 'include' });
+        const token = localStorage.getItem('authToken');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+        const response = await fetch('/api/auth/session', {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await response.json();
-        if (!response.ok || !data.session || !data.session.user || data.session.user.role !== 'admin') {
-          toast.error('Please log in as an admin.', {
+        if (!response.ok || !data.session || !data.session.user || data.session.user.role !== 'user') {
+          toast.error('Please log in as a user.', {
             style: {
               background: '#FFFFFF',
               color: '#1F2937',
@@ -58,12 +79,13 @@ export default function AdminPage() {
             },
             iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
           });
-          router.push('/login?redirect=/admin');
+          router.push('/login?redirect=/user-dashboard');
           return;
         }
+        setUserEmail(data.session.user.email);
         setSessionChecked(true);
       } catch (error) {
-        console.error('Session check error:', error);
+        console.error('Session check error:', error.message);
         toast.error('Failed to verify session', {
           style: {
             background: '#FFFFFF',
@@ -74,16 +96,46 @@ export default function AdminPage() {
           },
           iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
         });
-        router.push('/login?redirect=/admin');
+        router.push('/login?redirect=/user-dashboard');
       }
     };
+
+    const initializeOneSignal = async () => {
+      try {
+        await OneSignal.init({
+          appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || '2a61ca63-57b7-480b-a6e9-1b11c6ac7375',
+          allowLocalhostAsSecureOrigin: true,
+        });
+        await OneSignal.showSlidedownPrompt();
+        const token = localStorage.getItem('authToken');
+        if (token) {
+          const sessionResponse = await fetch('/api/auth/session', {
+            credentials: 'include',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const sessionData = await sessionResponse.json();
+          if (sessionData.session?.user?.email) {
+            await OneSignal.setExternalUserId(sessionData.session.user.email);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing OneSignal:', error.message);
+      }
+    };
+
     checkSession();
+    initializeOneSignal();
   }, [router]);
 
+  // Fetch products, categories, and orders
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await fetch('/api/products', { credentials: 'include' });
+        const token = localStorage.getItem('authToken');
+        const response = await fetch('/api/products?user=true', {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const data = await response.json();
         const productsArray = Array.isArray(data) ? data : data.products || [];
@@ -108,7 +160,11 @@ export default function AdminPage() {
 
     const fetchCategories = async () => {
       try {
-        const response = await fetch('/api/categories', { credentials: 'include' });
+        const token = localStorage.getItem('authToken');
+        const response = await fetch('/api/categories', {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
         const data = await response.json();
         setCategories(Array.isArray(data) ? data : []);
@@ -128,29 +184,87 @@ export default function AdminPage() {
       }
     };
 
+    const fetchOrders = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await fetch('/api/orders', {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+        const ordersData = await response.json();
+        setOrders(Array.isArray(ordersData) ? ordersData : []);
+        setFilteredOrders(Array.isArray(ordersData) ? ordersData : []);
+      } catch (error) {
+        console.error('Error fetching orders:', error.message);
+        toast.error('Failed to load orders', {
+          style: {
+            background: '#FFFFFF',
+            color: '#1F2937',
+            border: '1px solid #EF4444',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+          },
+          iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
+        });
+        setOrders([]);
+        setFilteredOrders([]);
+      }
+    };
+
     if (sessionChecked) {
       fetchProducts();
       fetchCategories();
+      fetchOrders();
     }
   }, [sessionChecked]);
 
-  const debouncedSearch = useCallback(
+  // Debounced search for products
+  const debouncedProductSearch = useCallback(
     debounce((query) => {
       const filtered = products.filter((prod) =>
-        prod.title?.toLowerCase().includes(query.toLowerCase()) ||
-        prod.category?.toLowerCase().includes(query.toLowerCase()) ||
-        prod.brand?.toLowerCase().includes(query.toLowerCase())
+        (prod.title?.toLowerCase().includes(query.toLowerCase()) ||
+         prod.category?.toLowerCase().includes(query.toLowerCase()) ||
+         prod.brand?.toLowerCase().includes(query.toLowerCase()))
       );
       setFilteredProducts(filtered);
-      setCurrentPage(1);
+      setProductCurrentPage(1);
     }, 300),
     [products]
   );
 
-  useEffect(() => {
-    debouncedSearch(searchQuery);
-  }, [searchQuery, debouncedSearch]);
+  // Debounced search for orders
+  const debouncedOrderSearch = useCallback(
+    debounce((query) => {
+      const filtered = orders.filter((order) =>
+        order._id.toLowerCase().includes(query.toLowerCase()) ||
+        order.items.some((item) => item.product.title.toLowerCase().includes(query.toLowerCase()))
+      );
+      setFilteredOrders(filtered.filter((order) => orderActiveTab === 'all' || order.status === orderActiveTab));
+      setOrderCurrentPage(1);
+    }, 300),
+    [orders, orderActiveTab]
+  );
 
+  useEffect(() => {
+    debouncedProductSearch(productSearchQuery);
+  }, [productSearchQuery, debouncedProductSearch]);
+
+  useEffect(() => {
+    debouncedOrderSearch(orderSearchQuery);
+  }, [orderSearchQuery, debouncedOrderSearch]);
+
+  // Filter orders by active tab
+  useEffect(() => {
+    const filtered = orders.filter((order) => orderActiveTab === 'all' || order.status === orderActiveTab);
+    setFilteredOrders(filtered.filter((order) =>
+      order._id.toLowerCase().includes(orderSearchQuery.toLowerCase()) ||
+      order.items.some((item) => item.product.title.toLowerCase().includes(orderSearchQuery.toLowerCase()))
+    ));
+    setOrderCurrentPage(1);
+  }, [orderActiveTab, orders, orderSearchQuery]);
+
+  // Handle product form changes
   const handleProductChange = (e) => {
     const { name, value } = e.target;
     if (name === 'colors') {
@@ -162,10 +276,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleCategoryChange = (e) => {
-    setCategory({ ...category, [e.target.name]: e.target.value });
-  };
-
+  // Handle file uploads
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files);
     if (selectedFiles.length > 5) {
@@ -184,6 +295,7 @@ export default function AdminPage() {
     setFiles(selectedFiles);
   };
 
+  // Submit product form
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     if (!product.title || !product.price || !product.category) {
@@ -236,19 +348,23 @@ export default function AdminPage() {
         inStock: product.inStock,
       };
 
+      const token = localStorage.getItem('authToken');
       const url = editingProductId ? `/api/product/${editingProductId}` : '/api/products';
       const method = editingProductId ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(productData),
         credentials: 'include',
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || editingProductId ? 'Failed to update product' : 'Failed to add product');
+        throw new Error(data.error || (editingProductId ? 'Failed to update product' : 'Failed to add product'));
       }
 
       toast.success(editingProductId ? 'Product updated successfully!' : 'Product added successfully!', {
@@ -261,9 +377,14 @@ export default function AdminPage() {
         },
         iconTheme: { primary: '#16A34A', secondary: '#FFFFFF' },
       });
-      const updatedProductsResponse = await fetch('/api/products', { credentials: 'include' });
+
+      const updatedProductsResponse = await fetch('/api/products?user=true', {
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const updatedProducts = await updatedProductsResponse.json();
       setProducts(Array.isArray(updatedProducts) ? updatedProducts : updatedProducts.products || []);
+      setFilteredProducts(Array.isArray(updatedProducts) ? updatedProducts : updatedProducts.products || []);
       setProduct({
         title: '',
         price: '',
@@ -302,9 +423,14 @@ export default function AdminPage() {
     }
   };
 
+  // Edit product
   const handleEditProduct = async (id) => {
     try {
-      const response = await fetch(`/api/product/${id}`, { credentials: 'include' });
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/product/${id}`, {
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || 'Failed to fetch product');
@@ -328,7 +454,7 @@ export default function AdminPage() {
       setFiles([]);
       setIsModalOpen(true);
     } catch (error) {
-      console.error('Error fetching product for edit:', error);
+      console.error('Error fetching product for edit:', error.message);
       toast.error(error.message || 'Failed to load product for editing', {
         style: {
           background: '#FFFFFF',
@@ -342,12 +468,15 @@ export default function AdminPage() {
     }
   };
 
+  // Delete product
   const handleDeleteProduct = async (id) => {
     if (!confirm('Are you sure you want to delete this product?')) return;
     try {
+      const token = localStorage.getItem('authToken');
       const response = await fetch(`/api/product/${id}`, {
         method: 'DELETE',
         credentials: 'include',
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
         const data = await response.json();
@@ -364,8 +493,9 @@ export default function AdminPage() {
         iconTheme: { primary: '#16A34A', secondary: '#FFFFFF' },
       });
       setProducts(products.filter((p) => p._id !== id));
+      setFilteredProducts(filteredProducts.filter((p) => p._id !== id));
     } catch (error) {
-      console.error('Error deleting product:', error);
+      console.error('Error deleting product:', error.message);
       toast.error(error.message || 'Failed to delete product', {
         style: {
           background: '#FFFFFF',
@@ -379,10 +509,17 @@ export default function AdminPage() {
     }
   };
 
-  const handleCategorySubmit = async (e) => {
-    e.preventDefault();
-    if (!category.name) {
-      toast.error('Category name is required.', {
+  // Toggle order selection for cancellation
+  const toggleSelectOrder = (orderId) => {
+    setSelectedOrders((prev) =>
+      prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
+    );
+  };
+
+  // Cancel selected orders
+  const handleCancelOrders = async () => {
+    if (!cancelReason) {
+      toast.error('Please select a reason for cancellation', {
         style: {
           background: '#FFFFFF',
           color: '#1F2937',
@@ -394,18 +531,36 @@ export default function AdminPage() {
       });
       return;
     }
+
+    setIsCancelling(true);
     try {
-      const response = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(category),
-        credentials: 'include',
+      const token = localStorage.getItem('authToken');
+      const response = await fetch('/api/orders', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orderIds: selectedOrders, status: 'cancelled', reason: cancelReason }),
       });
+
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to add category');
+        throw new Error(data.message || 'Failed to cancel orders');
       }
-      toast.success('Category added successfully!', {
+
+      setOrders((prev) =>
+        prev.map((order) =>
+          selectedOrders.includes(order._id) ? { ...order, status: 'cancelled', cancellationReason: cancelReason } : order
+        )
+      );
+      setFilteredOrders((prev) =>
+        prev.map((order) =>
+          selectedOrders.includes(order._id) ? { ...order, status: 'cancelled', cancellationReason: cancelReason } : order
+        )
+      );
+      setSelectedOrders([]);
+      toast.success('Selected orders cancelled successfully', {
         style: {
           background: '#FFFFFF',
           color: '#1F2937',
@@ -415,13 +570,9 @@ export default function AdminPage() {
         },
         iconTheme: { primary: '#16A34A', secondary: '#FFFFFF' },
       });
-      const updatedCategoriesResponse = await fetch('/api/categories', { credentials: 'include' });
-      const updatedCategories = await updatedCategoriesResponse.json();
-      setCategories(Array.isArray(updatedCategories) ? updatedCategories : []);
-      setCategory({ name: '', icon: '' });
     } catch (error) {
-      console.error('Error adding category:', error);
-      toast.error(error.message || 'Failed to add category', {
+      console.error('Error cancelling orders:', error.message);
+      toast.error(error.message || 'Failed to cancel orders', {
         style: {
           background: '#FFFFFF',
           color: '#1F2937',
@@ -431,9 +582,14 @@ export default function AdminPage() {
         },
         iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
       });
+    } finally {
+      setIsCancelling(false);
+      setShowCancelDialog(false);
+      setCancelReason('');
     }
   };
 
+  // Open add product modal
   const openAddProductModal = () => {
     setProduct({
       title: '',
@@ -458,12 +614,13 @@ export default function AdminPage() {
     setIsModalOpen(true);
   };
 
-  const handleSort = (key) => {
+  // Sort products
+  const handleProductSort = (key) => {
     let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+    if (productSortConfig.key === key && productSortConfig.direction === 'asc') {
       direction = 'desc';
     }
-    setSortConfig({ key, direction });
+    setProductSortConfig({ key, direction });
     const sorted = [...filteredProducts].sort((a, b) => {
       if (key === 'price') {
         return direction === 'asc' ? (a.price || 0) - (b.price || 0) : (b.price || 0) - (a.price || 0);
@@ -475,12 +632,17 @@ export default function AdminPage() {
     setFilteredProducts(sorted);
   };
 
+  // Pagination
   const paginatedProducts = filteredProducts.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    (productCurrentPage - 1) * itemsPerPage,
+    productCurrentPage * itemsPerPage
   );
-
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const paginatedOrders = filteredOrders.slice(
+    (orderCurrentPage - 1) * itemsPerPage,
+    orderCurrentPage * itemsPerPage
+  );
+  const productTotalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const orderTotalPages = Math.ceil(filteredOrders.length / itemsPerPage);
 
   const modalVariants = {
     hidden: { opacity: 0, scale: 0.95 },
@@ -502,9 +664,8 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 font-poppins">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 font-poppins">
       <div className="flex">
- 
         {/* Main Content */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8">
           <motion.div
@@ -524,17 +685,17 @@ export default function AdminPage() {
                 >
                   <Menu className="w-6 h-6" />
                 </motion.button>
-                <h1 className="text-3xl font-extrabold text-gray-900  flex items-center">
+                <h1 className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 flex items-center">
                   <Package className="w-8 h-8 mr-3 text-orange-600 dark:text-orange-400" />
-                  Admin Dashboard
+                  User Dashboard
                 </h1>
               </div>
               <div className="flex items-center gap-4">
                 <div className="relative w-full sm:w-64">
                   <input
                     type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={productSearchQuery}
+                    onChange={(e) => setProductSearchQuery(e.target.value)}
                     placeholder="Search products..."
                     className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-all duration-200"
                   />
@@ -559,7 +720,7 @@ export default function AdminPage() {
               transition={{ delay: 0.2, duration: 0.5 }}
               className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8"
             >
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">Products</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">My Products</h2>
               {filteredProducts.length === 0 ? (
                 <div className="text-center py-10">
                   <p className="text-gray-500 dark:text-gray-400 text-lg">No products found. Try adding some!</p>
@@ -578,16 +739,16 @@ export default function AdminPage() {
                     <table className="w-full text-sm text-left text-gray-700 dark:text-gray-200">
                       <thead className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
                         <tr>
-                          {['Image', 'Title', 'Price', 'Category', 'Brand', 'Stock'].map((header, index) => (
+                          {['Image', 'Title', 'Price', 'Category', 'Brand', 'Stock'].map((header) => (
                             <th
                               key={header}
                               className="px-6 py-4 font-semibold cursor-pointer"
-                              onClick={() => handleSort(header.toLowerCase())}
+                              onClick={() => handleProductSort(header.toLowerCase())}
                             >
                               <span className="flex items-center gap-2">
                                 {header}
-                                {sortConfig.key === header.toLowerCase() && (
-                                  <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                                {productSortConfig.key === header.toLowerCase() && (
+                                  <span>{productSortConfig.direction === 'asc' ? '↑' : '↓'}</span>
                                 )}
                               </span>
                             </th>
@@ -697,12 +858,12 @@ export default function AdminPage() {
                   </div>
                   <div className="flex justify-between items-center mt-4">
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} products
+                      Showing {(productCurrentPage - 1) * itemsPerPage + 1} to {Math.min(productCurrentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length} products
                     </p>
                     <div className="flex gap-2">
                       <motion.button
-                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
+                        onClick={() => setProductCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={productCurrentPage === 1}
                         className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
@@ -710,8 +871,8 @@ export default function AdminPage() {
                         <ChevronLeft className="w-5 h-5" />
                       </motion.button>
                       <motion.button
-                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
+                        onClick={() => setProductCurrentPage((prev) => Math.min(prev + 1, productTotalPages))}
+                        disabled={productCurrentPage === productTotalPages}
                         className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
@@ -724,83 +885,214 @@ export default function AdminPage() {
               )}
             </motion.section>
 
-            {/* Categories Section */}
-            <motion.section
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8"
-            >
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">Categories</h2>
-              {categories.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-lg">No categories found.</p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {categories.map((cat) => (
-                    <motion.div
-                      key={cat._id}
-                      className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg shadow-sm"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      {cat.icon ? (
-                        <Image src={cat.icon} alt={cat.name} width={48} height={48} className="w-12 h-12 object-cover rounded-lg mr-4" />
-                      ) : (
-                        <div className="w-12 h-12 bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center mr-4">
-                          <span className="text-xs">No Icon</span>
-                        </div>
-                      )}
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{cat.name}</span>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </motion.section>
-
-            {/* Category Form Section */}
+            {/* Orders Section */}
             <motion.section
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4, duration: 0.5 }}
               className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6"
             >
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">Add New Category</h2>
-              <form onSubmit={handleCategorySubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Category Name *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={category.name}
-                    onChange={handleCategoryChange}
-                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-all duration-200"
-                    required
-                    placeholder="e.g., Electronics"
-                  />
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">My Orders</h2>
+              <div className="mb-6">
+                <div className="flex space-x-4 border-b border-gray-200 dark:border-gray-600">
+                  {['all', 'pending', 'shipped', 'delivered', 'cancelled'].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setOrderActiveTab(tab)}
+                      className={`px-4 py-2 font-medium ${orderActiveTab === tab ? 'border-b-2 border-orange-500 text-orange-500' : 'text-gray-600 dark:text-gray-400 hover:text-orange-500 dark:hover:text-orange-400'}`}
+                    >
+                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
                 </div>
-                {/* <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Icon URL (Optional)</label>
+              </div>
+              <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center">
+                <div className="relative w-full sm:w-64">
                   <input
                     type="text"
-                    name="icon"
-                    value={category.icon}
-                    onChange={handleCategoryChange}
-                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-all duration-200"
-                    placeholder="e.g., https://example.com/icon.png"
+                    value={orderSearchQuery}
+                    onChange={(e) => setOrderSearchQuery(e.target.value)}
+                    placeholder="Search orders by ID or product..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 transition-all duration-200"
                   />
-                </div> */}
-                <div className="md:col-span-2">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                {selectedOrders.length > 0 && (
                   <motion.button
-                    type="submit"
-                    className="bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-800 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
+                    onClick={() => setShowCancelDialog(true)}
+                    disabled={isCancelling}
+                    className={`px-6 py-2.5 rounded-lg font-medium text-white ${isCancelling ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800'} transition-colors`}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    Add Category
+                    {isCancelling ? (
+                      <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
+                    ) : (
+                      `Cancel Selected (${selectedOrders.length})`
+                    )}
                   </motion.button>
+                )}
+              </div>
+              {filteredOrders.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-gray-500 dark:text-gray-400 text-lg">No orders found.</p>
                 </div>
-              </form>
+              ) : (
+                <>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-sm text-left text-gray-700 dark:text-gray-200">
+                      <thead className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                        <tr>
+                          <th className="px-6 py-4 font-semibold">
+                            <input
+                              type="checkbox"
+                              checked={selectedOrders.length === paginatedOrders.filter(o => o.status === 'pending').length && paginatedOrders.some(o => o.status === 'pending')}
+                              onChange={() => {
+                                if (selectedOrders.length === paginatedOrders.filter(o => o.status === 'pending').length) {
+                                  setSelectedOrders([]);
+                                } else {
+                                  setSelectedOrders(paginatedOrders.filter(o => o.status === 'pending').map(o => o._id));
+                                }
+                              }}
+                              className="h-4 w-4 text-orange-500 focus:ring-orange-500 rounded"
+                            />
+                          </th>
+                          <th className="px-6 py-4 font-semibold">Order ID</th>
+                          <th className="px-6 py-4 font-semibold">Status</th>
+                          <th className="px-6 py-4 font-semibold">Items</th>
+                          <th className="px-6 py-4 font-semibold">Payment</th>
+                          <th className="px-6 py-4 font-semibold">Address</th>
+                          <th className="px-6 py-4 font-semibold">Ordered</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedOrders.map((order) => (
+                          <motion.tr
+                            key={order._id}
+                            className="border-b border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ duration: 0.3 }}
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedOrders.includes(order._id)}
+                                onChange={() => toggleSelectOrder(order._id)}
+                                disabled={order.status !== 'pending'}
+                                className="h-4 w-4 text-orange-500 focus:ring-orange-500 rounded"
+                              />
+                            </td>
+                            <td className="px-6 py-4 truncate max-w-xs">{order._id}</td>
+                            <td className="px-6 py-4">
+                              <span className={`text-sm font-medium ${order.status === 'pending' ? 'text-yellow-600 dark:text-yellow-400' : order.status === 'shipped' ? 'text-blue-600 dark:text-blue-400' : order.status === 'delivered' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                {order.status === 'cancelled' && order.cancellationReason && (
+                                  <span className="block text-xs">({order.cancellationReason})</span>
+                                )}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              {order.items.map((item, index) => (
+                                <div key={index} className="flex items-center space-x-2 mb-2">
+                                  <Image src={item.product.imageUrl || '/placeholder.png'} alt={item.product.title} width={32} height={32} className="w-8 h-8 object-cover rounded" />
+                                  <div>
+                                    <p className="text-xs">{item.product.title}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Qty: {item.quantity}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </td>
+                            <td className="px-6 py-4">{order.paymentMethod || 'N/A'}</td>
+                            <td className="px-6 py-4 truncate max-w-xs">{order.shippingDetails?.address || 'N/A'}</td>
+                            <td className="px-6 py-4">{new Date(order.createdAt).toLocaleDateString()}</td>
+                          </motion.tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="md:hidden space-y-4">
+                    {paginatedOrders.map((order) => (
+                      <motion.div
+                        key={order._id}
+                        className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 shadow-sm"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <div className="flex items-start space-x-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedOrders.includes(order._id)}
+                            onChange={() => toggleSelectOrder(order._id)}
+                            disabled={order.status !== 'pending'}
+                            className="mt-1 h-5 w-5 text-orange-500 focus:ring-orange-500 rounded"
+                          />
+                          <Package className="w-8 h-8 text-orange-600 dark:text-orange-400 mt-1" />
+                          <div className="flex-1">
+                            <p className="text-lg font-medium text-gray-900 dark:text-gray-100">Order #{order._id}</p>
+                            <p className={`text-sm font-medium ${order.status === 'pending' ? 'text-yellow-600 dark:text-yellow-400' : order.status === 'shipped' ? 'text-blue-600 dark:text-blue-400' : order.status === 'delivered' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              Status: {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                            </p>
+                            {order.status === 'cancelled' && order.cancellationReason && (
+                              <p className="text-sm text-red-600 dark:text-red-400">Reason: {order.cancellationReason}</p>
+                            )}
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Payment: {order.paymentMethod || 'N/A'}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              Address: {order.shippingDetails?.address || 'N/A'}, {order.shippingDetails?.town || 'N/A'}, {order.shippingDetails?.city || 'N/A'}
+                            </p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Ordered: {new Date(order.createdAt).toLocaleDateString()}</p>
+                            <div className="mt-4">
+                              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Items</h3>
+                              {order.items.map((item, index) => (
+                                <div key={index} className="flex items-center space-x-3 mt-2">
+                                  <Image
+                                    src={item.product.imageUrl || '/placeholder.png'}
+                                    alt={item.product.title}
+                                    width={48}
+                                    height={48}
+                                    className="w-12 h-12 object-cover rounded"
+                                  />
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.product.title}</p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Quantity: {item.quantity}</p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Price: Rs: {item.product.price?.toFixed(2)}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center mt-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Showing {(orderCurrentPage - 1) * itemsPerPage + 1} to {Math.min(orderCurrentPage * itemsPerPage, filteredOrders.length)} of {filteredOrders.length} orders
+                    </p>
+                    <div className="flex gap-2">
+                      <motion.button
+                        onClick={() => setOrderCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={orderCurrentPage === 1}
+                        className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </motion.button>
+                      <motion.button
+                        onClick={() => setOrderCurrentPage((prev) => Math.min(prev + 1, orderTotalPages))}
+                        disabled={orderCurrentPage === orderTotalPages}
+                        className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </motion.button>
+                    </div>
+                  </div>
+                </>
+              )}
             </motion.section>
 
             {/* Product Modal */}
@@ -1105,6 +1397,70 @@ export default function AdminPage() {
                     </form>
                   </motion.div>
                 </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Cancel Order Dialog */}
+            <AnimatePresence>
+              {showCancelDialog && (
+                <Dialog
+                  open={showCancelDialog}
+                  onClose={() => setShowCancelDialog(false)}
+                  className="fixed inset-0 z-50 flex items-center justify-center"
+                >
+                  <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+                  <motion.div
+                    className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4"
+                    variants={modalVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                      Cancel Selected Orders
+                    </Dialog.Title>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Reason for Cancellation
+                      </label>
+                      <select
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 text-gray-800 dark:text-gray-100"
+                      >
+                        <option value="">Select a reason</option>
+                        {predefinedReasons.map((reason) => (
+                          <option key={reason} value={reason}>
+                            {reason}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex justify-end space-x-4">
+                      <motion.button
+                        onClick={handleCancelOrders}
+                        disabled={isCancelling || !cancelReason}
+                        className={`px-4 py-2 rounded-lg font-medium text-white ${isCancelling || !cancelReason ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800'}`}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {isCancelling ? (
+                          <Loader2 className="w-5 h-5 animate-spin inline mr-2" />
+                        ) : (
+                          'Confirm Cancellation'
+                        )}
+                      </motion.button>
+                      <motion.button
+                        onClick={() => setShowCancelDialog(false)}
+                        className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 rounded-lg font-medium"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        Close
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                </Dialog>
               )}
             </AnimatePresence>
           </motion.div>

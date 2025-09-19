@@ -624,11 +624,11 @@ export default function ProductDetailPage() {
             >
               <div className="flex items-center space-x-2 sm:space-x-4">
                 <p className="text-2xl sm:text-3xl font-bold text-orange-500">
-                  ${parseFloat(product.price || 0).toFixed(2)}
+                  Rs:{parseFloat(product.price || 0).toFixed(2)}
                 </p>
                 {product.originalPrice && (
                   <p className="text-sm sm:text-lg text-blue-500 line-through">
-                    ${parseFloat(product.originalPrice).toFixed(2)}
+                    Rs:{parseFloat(product.originalPrice).toFixed(2)}
                   </p>
                 )}
                 {product.discount && (

@@ -1,3 +1,4 @@
+// pages/login.js
 'use client';
 
 import { useState } from 'react';
@@ -17,73 +18,82 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/';
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
 
-  try {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      toast.error(errorData.message || 'Login failed.');
-      setLoading(false);
-      return;
-    }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(errorData.message || 'Login failed.');
+        setLoading(false);
+        return;
+      }
 
-    const data = await response.json();
-    toast.success(data.message || 'Login successful!');
+      const data = await response.json();
+      toast.success(data.message || 'Login successful!');
 
-    // ✅ Save token in localStorage for authentication
-    if (data.token) {
-      localStorage.setItem('authToken', data.token);
-    }
+      // ✅ Save token in localStorage for authentication
+      if (data.token) {
+        localStorage.setItem('authToken', data.token);
+      }
 
-    // Optional: Save basic user info
-    localStorage.setItem(
-      'user',
-      JSON.stringify({
-        id: data.user.id,
-        email: data.user.email,
-        role: data.user.role,
-      })
-    );
+      // Optional: Save basic user info
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          id: data.user.id,
+          email: data.user.email,
+          role: data.user.role,
+        })
+      );
 
-    // Fetch session to verify user
-    const sessionResponse = await fetch('/api/auth/session', {
-      credentials: 'include',
-    });
+      // Fetch session to verify user
+      const sessionResponse = await fetch('/api/auth/session', {
+        credentials: 'include',
+      });
 
-    if (sessionResponse.ok) {
-      const sessionData = await sessionResponse.json();
+      if (sessionResponse.ok) {
+        const sessionData = await sessionResponse.json();
 
-      if (sessionData.session && sessionData.session.user) {
-        // ✅ Admin Role Logic
-        if (sessionData.session.user.role === 'admin') {
-          toast.success('Admin login successful! Redirecting to dashboard...');
-          router.push('/pages/admin');
+        if (sessionData.session && sessionData.session.user) {
+          // ✅ Admin Role Logic
+          if (sessionData.session.user.role === 'admin') {
+            toast.success('Admin login successful! Redirecting to dashboard...');
+            router.push('/pages/admin');
+
+            // 🚀 Full refresh AFTER navigation
+            setTimeout(() => {
+              window.location.reload();
+            }, 100);
+            return;
+          }
+
+          // ✅ Normal User Logic
+          toast.success('Welcome back! Continue shopping.');
+          router.push('/');
 
           // 🚀 Full refresh AFTER navigation
           setTimeout(() => {
             window.location.reload();
-          }, 100);
-          return;
+          }, 500);
+        } else {
+          // ❌ Session verification failed
+          toast.error('Failed to verify session. Redirecting to home.');
+          router.push('/');
+
+          setTimeout(() => {
+            window.location.reload();
+          }, 500);
         }
-
-        // ✅ Normal User Logic
-        toast.success('Welcome back! Continue shopping.');
-        router.push("/");
-
-        // 🚀 Full refresh AFTER navigation
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
       } else {
-        // ❌ Session verification failed
+        // ❌ Session endpoint error
         toast.error('Failed to verify session. Redirecting to home.');
         router.push('/');
 
@@ -91,22 +101,13 @@ const handleSubmit = async (e) => {
           window.location.reload();
         }, 500);
       }
-    } else {
-      // ❌ Session endpoint error
-      toast.error('Failed to verify session. Redirecting to home.');
-      router.push('/');
-
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Login error:', error);
-    toast.error('An unexpected error occurred. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const buttonHover = { scale: 1.03, boxShadow: '0 6px 16px rgba(248, 86, 6, 0.3)' };
   const buttonTap = { scale: 0.98 };

@@ -6,7 +6,7 @@ import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
-
+import Image from "next/image";
 export default function CheckoutPage() {
   const router = useRouter();
   const [cart, setCart] = useState([]);
@@ -219,7 +219,9 @@ export default function CheckoutPage() {
               {cart.map((item) => (
                 <div key={item.productId} className="flex justify-between items-center text-gray-700 dark:text-gray-200">
                   <div className="flex items-center gap-4">
-                    <img
+                    <Image
+                      height={50}
+                      width={50}         
                       src={item.product?.image || "/placeholder.png"}
                       alt={item.product?.title || "Product"}
                       className="w-12 h-12 object-cover rounded-lg"
@@ -229,13 +231,13 @@ export default function CheckoutPage() {
                       <span className="text-xs text-gray-500 dark:text-gray-400">x{item.quantity}</span>
                     </div>
                   </div>
-                  <span className="font-medium">${((item.product?.price || 0) * item.quantity).toFixed(2)}</span>
+                  <span className="font-medium">Rs:{((item.product?.price || 0) * item.quantity).toFixed(2)}</span>
                 </div>
               ))}
             </div>
             <div className="flex justify-between font-bold border-t border-gray-200 dark:border-gray-700 pt-4 mt-6 text-lg">
               <span>Total:</span>
-              <span className="text-orange-600 dark:text-orange-400">Rs{total.toFixed(2)}</span>
+              <span className="text-orange-600 dark:text-orange-400">Rs:{total.toFixed(2)}</span>
             </div>
           </motion.div>
 
@@ -268,7 +270,7 @@ export default function CheckoutPage() {
                     required={["name", "city", "address", "town", "phone"].includes(field)}
                     className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 dark:focus:ring-orange-400 focus:border-transparent transition-all duration-200 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                     disabled={isSubmitting}
-                    placeholder={`Enter ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`}
+                    placeholder={`Enter ${field.replace(/([A-Z])/g, ' Rs:1').toLowerCase()}`}
                   />
                 </div>
               ))}
