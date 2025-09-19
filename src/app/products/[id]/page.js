@@ -232,11 +232,51 @@ export default function ProductDetailPage() {
     }
     setIsSubmitting(true);
     try {
+      const sessionResponse = await fetch('/api/auth/session', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!sessionResponse.ok) {
+        toast.error('Session expired. Please login again! 😺', {
+          style: {
+            background: '#DBEAFE',
+            color: '#1E3A8A',
+            border: '2px solid #F97316',
+            borderRadius: '20px',
+            boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
+            fontFamily: 'Baloo 2, sans-serif',
+            fontWeight: '700',
+            padding: '12px 16px',
+          },
+          iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
+        });
+        router.push('/pages/login');
+        return;
+      }
+      const sessionData = await sessionResponse.json();
+      if (!sessionData.session) {
+        toast.error('Please login to continue! 😺', {
+          style: {
+            background: '#DBEAFE',
+            color: '#1E3A8A',
+            border: '2px solid #F97316',
+            borderRadius: '20px',
+            boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
+            fontFamily: 'Baloo 2, sans-serif',
+            fontWeight: '700',
+            padding: '12px 16px',
+          },
+          iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
+        });
+        router.push('/pages/login');
+        return;
+      }
+
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productId: params.id,
+          productId: product._id,
           quantity,
           paymentMethod,
           shippingDetails: orderDetails,
@@ -346,7 +386,7 @@ export default function ProductDetailPage() {
         return;
       }
       const sessionData = await sessionResponse.json();
-      if (!sessionData?.session?.user) {
+      if (!sessionData.session) {
         toast.error('Please login to continue! 😺', {
           style: {
             background: '#DBEAFE',
