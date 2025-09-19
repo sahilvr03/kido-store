@@ -254,7 +254,7 @@ export default function AdminOrdersPage() {
                             <div>
                               <p className="text-sm font-medium text-gray-900 dark:text-white font-baloo">{item.product.title}</p>
                               <p className="text-sm text-gray-600 dark:text-gray-400 font-baloo">Quantity: {item.quantity}</p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400 font-baloo">Price: ${item.product.price}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 font-baloo">Price: Rs:{item.product.price}</p>
                             </div>
                           </div>
                         ))}
