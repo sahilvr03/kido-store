@@ -52,98 +52,59 @@ export default function CheckoutPage() {
     setOrderDetails({ ...orderDetails, [e.target.name]: e.target.value });
   };
 
-  const handleOrderSubmit = async (e) => {
-    e.preventDefault();
-    if (!orderDetails.name || !orderDetails.city || !orderDetails.address || !orderDetails.town || !orderDetails.phone) {
-      toast.error("Please fill all required fields", {
-        style: {
-          background: '#FFFFFF',
-          color: '#1F2937',
-          border: '1px solid #EF4444',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
-        },
-        iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
-      });
-      return;
-    }
+const handleOrderSubmit = async (e) => {
+  e.preventDefault();
+  if (!orderDetails.name || !orderDetails.city || !orderDetails.address || !orderDetails.town || !orderDetails.phone) {
+    toast.error("Please fill all required fields", {
+      style: {
+        background: '#FFFFFF',
+        color: '#1F2937',
+        border: '1px solid #EF4444',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+      },
+      iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
+    });
+    return;
+  }
 
-    if (cart.length === 0) {
-      toast.error("Your cart is empty", {
-        style: {
-          background: '#FFFFFF',
-          color: '#1F2937',
-          border: '1px solid #EF4444',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
-        },
-        iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
-      });
-      return;
-    }
+  if (cart.length === 0) {
+    toast.error("Your cart is empty", {
+      style: {
+        background: '#FFFFFF',
+        color: '#1F2937',
+        border: '1px solid #EF4444',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+      },
+      iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
+    });
+    return;
+  }
 
-    setIsSubmitting(true);
-    try {
-      const orderRes = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cart.map(item => ({
-            productId: item.productId,
-            quantity: item.quantity,
-          })),
-          paymentMethod,
-          shippingDetails: orderDetails,
-          status: "Pending",
-        }),
-        credentials: "include",
-      });
-
-      if (!orderRes.ok) {
-        const contentType = orderRes.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Received non-JSON response from orders API');
+  setIsSubmitting(true);
+  try {
+    // Validate cart items
+    const validItems = [];
+    for (const item of cart) {
+      try {
+        const response = await fetch(`/api/product/${item.productId}`, { credentials: "include" });
+        if (!response.ok) {
+          console.warn(`Product not found for ID: ${item.productId}`);
+          continue; // Skip invalid product
         }
-        const data = await orderRes.json();
-        throw new Error(data.message || "Failed to place order");
+        const product = await response.json();
+        validItems.push({
+          productId: item.productId,
+          quantity: item.quantity,
+        });
+      } catch (error) {
+        console.error(`Error validating product ${item.productId}:`, error.message);
       }
+    }
 
-      const clearCartRes = await fetch("/api/cart", {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!clearCartRes.ok) {
-        console.warn("Failed to clear cart in backend, but order was placed");
-      }
-
-      setCart([]);
-      window.dispatchEvent(new CustomEvent("cartUpdated", { detail: { count: 0 } }));
-
-      setOrderDetails({
-        name: "",
-        city: "",
-        address: "",
-        town: "",
-        phone: "",
-        altPhone: "",
-      });
-
-      toast.success("Order placed successfully!", {
-        style: {
-          background: '#FFFFFF',
-          color: '#1F2937',
-          border: '1px solid #F85606',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(248, 86, 6, 0.2)',
-        },
-        iconTheme: { primary: '#F85606', secondary: '#FFFFFF' },
-      });
-
-      router.push("/pages/orders");
-    } catch (err) {
-      console.error("Order submission error:", err.message);
-      toast.error(err.message || "Failed to place order", {
+    if (validItems.length === 0) {
+      toast.error("No valid products in cart", {
         style: {
           background: '#FFFFFF',
           color: '#1F2937',
@@ -153,10 +114,79 @@ export default function CheckoutPage() {
         },
         iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
       });
-    } finally {
-      setIsSubmitting(false);
+      return;
     }
-  };
+
+    const orderRes = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: validItems,
+        paymentMethod,
+        shippingDetails: orderDetails,
+        status: "Pending",
+      }),
+      credentials: "include",
+    });
+
+    if (!orderRes.ok) {
+      const contentType = orderRes.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Received non-JSON response from orders API');
+      }
+      const data = await orderRes.json();
+      throw new Error(data.message || "Failed to place order");
+    }
+
+    const clearCartRes = await fetch("/api/cart", {
+      method: "DELETE",
+      credentials: "include",
+    });
+
+    if (!clearCartRes.ok) {
+      console.warn("Failed to clear cart in backend, but order was placed");
+    }
+
+    setCart([]);
+    window.dispatchEvent(new CustomEvent("cartUpdated", { detail: { count: 0 } }));
+
+    setOrderDetails({
+      name: "",
+      city: "",
+      address: "",
+      town: "",
+      phone: "",
+      altPhone: "",
+    });
+
+    toast.success("Order placed successfully!", {
+      style: {
+        background: '#FFFFFF',
+        color: '#1F2937',
+        border: '1px solid #F85606',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(248, 86, 6, 0.2)',
+      },
+      iconTheme: { primary: '#F85606', secondary: '#FFFFFF' },
+    });
+
+    router.push("/pages/orders");
+  } catch (err) {
+    console.error("Order submission error:", err.message);
+    toast.error(err.message || "Failed to place order", {
+      style: {
+        background: '#FFFFFF',
+        color: '#1F2937',
+        border: '1px solid #EF4444',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+      },
+      iconTheme: { primary: '#EF4444', secondary: '#FFFFFF' },
+    });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const total = cart.reduce((sum, item) => sum + (item.product?.price || 0) * item.quantity, 0);
 

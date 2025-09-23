@@ -212,95 +212,32 @@ export default function ProductDetailPage() {
     }
   };
 
-  const handleOrderSubmit = async (e) => {
-    e.preventDefault();
-    if (!orderDetails.name || !orderDetails.city || !orderDetails.address || !orderDetails.town || !orderDetails.phone) {
-      toast.error('Please fill all required fields 😺', {
-        style: {
-          background: '#DBEAFE',
-          color: '#1E3A8A',
-          border: '2px solid #EF4444',
-          borderRadius: '20px',
-          boxShadow: '0 8px 16px rgba(239, 68, 68, 0.4)',
-          fontFamily: 'Baloo 2, sans-serif',
-          fontWeight: '700',
-          padding: '12px 16px',
-        },
-        iconTheme: { primary: '#EF4444', secondary: '#DBEAFE' },
-      });
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const sessionResponse = await fetch('/api/auth/session', {
-        method: 'GET',
-        credentials: 'include',
-      });
-      if (!sessionResponse.ok) {
-        toast.error('Session expired. Please login again! 😺', {
-          style: {
-            background: '#DBEAFE',
-            color: '#1E3A8A',
-            border: '2px solid #F97316',
-            borderRadius: '20px',
-            boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
-            fontFamily: 'Baloo 2, sans-serif',
-            fontWeight: '700',
-            padding: '12px 16px',
-          },
-          iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
-        });
-        router.push('/pages/login');
-        return;
-      }
-      const sessionData = await sessionResponse.json();
-      if (!sessionData.session) {
-        toast.error('Please login to continue! 😺', {
-          style: {
-            background: '#DBEAFE',
-            color: '#1E3A8A',
-            border: '2px solid #F97316',
-            borderRadius: '20px',
-            boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
-            fontFamily: 'Baloo 2, sans-serif',
-            fontWeight: '700',
-            padding: '12px 16px',
-          },
-          iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
-        });
-        router.push('/pages/login');
-        return;
-      }
-
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product._id,
-          quantity,
-          paymentMethod,
-          shippingDetails: orderDetails,
-          status: 'Pending',
-        }),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Received non-JSON response from orders API');
-        }
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to place order');
-      }
-      const ordersResponse = await fetch('/api/orders', {
-        credentials: 'include',
-      });
-      if (!ordersResponse.ok) {
-        throw new Error('Failed to fetch updated orders data');
-      }
-      const ordersData = await ordersResponse.json();
-      const ordersCount = Array.isArray(ordersData) ? ordersData.length : 0;
-      toast.success('Order placed successfully! 🎉', {
+const handleOrderSubmit = async (e) => {
+  e.preventDefault();
+  if (!orderDetails.name || !orderDetails.city || !orderDetails.address || !orderDetails.town || !orderDetails.phone) {
+    toast.error('Please fill all required fields 😺', {
+      style: {
+        background: '#DBEAFE',
+        color: '#1E3A8A',
+        border: '2px solid #EF4444',
+        borderRadius: '20px',
+        boxShadow: '0 8px 16px rgba(239, 68, 68, 0.4)',
+        fontFamily: 'Baloo 2, sans-serif',
+        fontWeight: '700',
+        padding: '12px 16px',
+      },
+      iconTheme: { primary: '#EF4444', secondary: '#DBEAFE' },
+    });
+    return;
+  }
+  setIsSubmitting(true);
+  try {
+    const sessionResponse = await fetch('/api/auth/session', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!sessionResponse.ok) {
+      toast.error('Session expired. Please login again! 😺', {
         style: {
           background: '#DBEAFE',
           color: '#1E3A8A',
@@ -313,38 +250,101 @@ export default function ProductDetailPage() {
         },
         iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
       });
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ordersUpdated', { detail: { count: ordersCount } }));
-      }
-      setIsModalOpen(false);
-      setPaymentMethod(null);
-      setOrderDetails({
-        name: '',
-        city: '',
-        address: '',
-        town: '',
-        phone: '',
-        altPhone: '',
-      });
-    } catch (error) {
-      console.error('Error placing order:', error);
-      toast.error(error.message || 'Failed to place order 😿', {
+      router.push('/pages/login');
+      return;
+    }
+    const sessionData = await sessionResponse.json();
+    if (!sessionData.session) {
+      toast.error('Please login to continue! 😺', {
         style: {
           background: '#DBEAFE',
           color: '#1E3A8A',
-          border: '2px solid #EF4444',
+          border: '2px solid #F97316',
           borderRadius: '20px',
-          boxShadow: '0 8px 16px rgba(239, 68, 68, 0.4)',
+          boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
           fontFamily: 'Baloo 2, sans-serif',
           fontWeight: '700',
           padding: '12px 16px',
         },
-        iconTheme: { primary: '#EF4444', secondary: '#DBEAFE' },
+        iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
       });
-    } finally {
-      setIsSubmitting(false);
+      router.push('/pages/login');
+      return;
     }
-  };
+
+    const response = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: product._id, // Changed from product.productId to product._id
+        quantity,
+        paymentMethod,
+        shippingDetails: orderDetails,
+        status: 'Pending',
+      }),
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Received non-JSON response from orders API');
+      }
+      const data = await response.json();
+      throw new Error(data.message || 'Failed to place order');
+    }
+    const ordersResponse = await fetch('/api/orders', {
+      credentials: 'include',
+    });
+    if (!ordersResponse.ok) {
+      throw new Error('Failed to fetch updated orders data');
+    }
+    const ordersData = await ordersResponse.json();
+    const ordersCount = Array.isArray(ordersData) ? ordersData.length : 0;
+    toast.success('Order placed successfully! 🎉', {
+      style: {
+        background: '#DBEAFE',
+        color: '#1E3A8A',
+        border: '2px solid #F97316',
+        borderRadius: '20px',
+        boxShadow: '0 8px 16px rgba(249, 115, 22, 0.4)',
+        fontFamily: 'Baloo 2, sans-serif',
+        fontWeight: '700',
+        padding: '12px 16px',
+      },
+      iconTheme: { primary: '#F97316', secondary: '#DBEAFE' },
+    });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ordersUpdated', { detail: { count: ordersCount } }));
+    }
+    setIsModalOpen(false);
+    setPaymentMethod(null);
+    setOrderDetails({
+      name: '',
+      city: '',
+      address: '',
+      town: '',
+      phone: '',
+      altPhone: '',
+    });
+  } catch (error) {
+    console.error('Error placing order:', error);
+    toast.error(error.message || 'Failed to place order 😿', {
+      style: {
+        background: '#DBEAFE',
+        color: '#1E3A8A',
+        border: '2px solid #EF4444',
+        borderRadius: '20px',
+        boxShadow: '0 8px 16px rgba(239, 68, 68, 0.4)',
+        fontFamily: 'Baloo 2, sans-serif',
+        fontWeight: '700',
+        padding: '12px 16px',
+      },
+      iconTheme: { primary: '#EF4444', secondary: '#DBEAFE' },
+    });
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleBuyNow = async () => {
     try {

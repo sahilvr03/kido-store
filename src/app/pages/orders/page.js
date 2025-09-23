@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Loader2, Package, X } from 'lucide-react';
 import { Dialog } from '@headlessui/react';
 import OneSignal from 'react-onesignal';
+import Image from 'next/image';
 
 export default function UserOrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -257,8 +258,10 @@ export default function UserOrdersPage() {
                         <h3 className="text-sm font-semibold text-gray-800 dark:text-white font-baloo">Items</h3>
                         {order.items.map((item, index) => (
                           <div key={index} className="flex items-center space-x-3 mt-2">
-                            <img
-                              src={item.product.imageUrl}
+                            <Image
+                              height={48}
+                              width={48}
+                              src={item.product.images?.[0] || "/placeholder.png"}
                               alt={item.product.title}
                               className="w-12 h-12 object-cover rounded"
                             />

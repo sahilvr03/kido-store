@@ -167,7 +167,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     const user = await authenticate();
-    if (!user || user.role !== "user") {
+    if (!user || !["user", "admin"].includes(user.role)) {
       return new Response(JSON.stringify({ message: "Unauthorized: Invalid user role or token" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -236,14 +236,15 @@ export async function POST(req) {
 
     // Validate products exist and stock
     for (const item of validItems) {
-      const product = await productsCollection.findOne({ _id: item.productId });
+      const product = await productsCollection.findOne({ _id: new ObjectId(item.productId) });
+
       if (!product) {
         return new Response(JSON.stringify({ message: "One or more products not found" }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (!product.inStock || product.stock < item.quantity) { // Assuming 'stock' field exists
+      if (!product.inStock || product.stock < item.quantity) {
         return new Response(JSON.stringify({ message: `Insufficient stock for product ${product.title}` }), {
           status: 400,
           headers: { "Content-Type": "application/json" },

@@ -322,7 +322,7 @@ export default function Footer() {
         </div>
         <div className="pt-6 sm:pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-center text-sm">
           <p className="mb-4 sm:mb-0 text-gray-600 dark:text-gray-300">
-            © {new Date().getFullYear()} Dropwear. All rights reserved.
+            © {new Date().getFullYear()} KiddoShop. All rights reserved.
           </p>
           <div className="flex space-x-4 sm:space-x-6">
             <motion.a

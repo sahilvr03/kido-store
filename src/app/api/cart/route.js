@@ -9,12 +9,13 @@ async function authenticate(req) {
 
   if (!token) {
     console.error('Unauthorized: No token provided');
-    return null; // Return null instead of throwing error to avoid popups
+    return null;
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return decoded.id;
+    console.log('JWT decoded successfully:', { id: decoded.id, role: decoded.role, exp: decoded.exp });
+    return decoded;
   } catch (error) {
     console.error('JWT verification error:', error.message);
     return null;
@@ -23,48 +24,84 @@ async function authenticate(req) {
 
 export async function GET(req) {
   try {
-    const userId = await authenticate(req);
-    if (!userId) {
-      return Response.json({ items: [] });
+    const user = await authenticate(req);
+    if (!user) {
+      return Response.json({ items: [] }, { status: 401 });
     }
 
     const { db } = await connectToDatabase();
     const cartsCollection = db.collection('carts');
     const productsCollection = db.collection('products');
 
-    const cart = await cartsCollection.findOne({ userId: new ObjectId(userId) });
-    if (!cart) {
+    const cart = await cartsCollection.findOne({ userId: new ObjectId(user.id) });
+    if (!cart || !cart.items) {
       return Response.json({ items: [] });
     }
 
-    const itemsWithDetails = await Promise.all(
+    // Validate cart items
+    const validItems = await Promise.all(
       cart.items.map(async (item) => {
-        const product = await productsCollection.findOne({ _id: new ObjectId(item.productId) });
-        return {
-          ...item,
-          product: product || { _id: item.productId, title: 'Unknown Product', price: 0, imageUrl: '/placeholder.jpg' },
-        };
+        try {
+          const product = await productsCollection.findOne({ _id: new ObjectId(item.productId) });
+          if (product) {
+            return {
+              productId: item.productId.toString(),
+              quantity: item.quantity,
+              product: {
+                _id: product._id.toString(),
+                title: product.title,
+                price: product.price,
+                imageUrl: product.imageUrl || '/placeholder.jpg',
+              },
+            };
+          }
+          console.warn(`Invalid product ID in cart: ${item.productId}`);
+          return null;
+        } catch (error) {
+          console.error(`Error validating product ${item.productId}:`, error.message);
+          return null;
+        }
       })
     );
 
-    return Response.json({ items: itemsWithDetails });
+    const filteredItems = validItems.filter(item => item !== null);
+
+    // Update cart in database if invalid items were removed
+    if (filteredItems.length < cart.items.length) {
+      await cartsCollection.updateOne(
+        { userId: new ObjectId(user.id) },
+        { $set: { items: filteredItems.map(item => ({
+          productId: new ObjectId(item.productId),
+          quantity: item.quantity,
+        })), updatedAt: new Date() } }
+      );
+      console.log(`Removed ${cart.items.length - filteredItems.length} invalid items from cart for user ${user.id}`);
+    }
+
+    return Response.json({ items: filteredItems });
   } catch (error) {
     console.error('Cart GET error:', error.message);
-    return Response.json({ items: [] });
+    return Response.json({ items: [], message: 'Failed to fetch cart' }, { status: 500 });
   }
 }
 
 export async function POST(req) {
   try {
-    const userId = await authenticate(req);
-    if (!userId) {
-      return Response.json({ items: [] });
+    const user = await authenticate(req);
+    if (!user) {
+      return Response.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
     const { productId, quantity } = await req.json();
 
     if (!productId || !quantity || quantity < 1) {
       return Response.json({ message: 'Invalid product or quantity' }, { status: 400 });
+    }
+
+    try {
+      new ObjectId(productId); // Validate ObjectId format
+    } catch {
+      return Response.json({ message: 'Invalid productId format' }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();
@@ -76,22 +113,25 @@ export async function POST(req) {
       return Response.json({ message: 'Product not found' }, { status: 404 });
     }
 
-    const cart = await cartsCollection.findOne({ userId: new ObjectId(userId) });
+    const cart = await cartsCollection.findOne({ userId: new ObjectId(user.id) });
+    const newItem = { productId: new ObjectId(productId), quantity };
+
     if (cart) {
       const itemIndex = cart.items.findIndex((item) => item.productId.toString() === productId);
+      let updatedItems = [...cart.items];
       if (itemIndex > -1) {
-        cart.items[itemIndex].quantity += quantity;
+        updatedItems[itemIndex].quantity += quantity;
       } else {
-        cart.items.push({ productId: new ObjectId(productId), quantity });
+        updatedItems.push(newItem);
       }
       await cartsCollection.updateOne(
-        { userId: new ObjectId(userId) },
-        { $set: { items: cart.items, updatedAt: new Date() } }
+        { userId: new ObjectId(user.id) },
+        { $set: { items: updatedItems, updatedAt: new Date() } }
       );
     } else {
       await cartsCollection.insertOne({
-        userId: new ObjectId(userId),
-        items: [{ productId: new ObjectId(productId), quantity }],
+        userId: new ObjectId(user.id),
+        items: [newItem],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -100,16 +140,16 @@ export async function POST(req) {
     return Response.json({ message: 'Added to cart successfully' });
   } catch (error) {
     console.error('Cart POST error:', error.message);
-    return Response.json({ message: 'Failed to add to cart' }, { status: 400 });
+    return Response.json({ message: 'Failed to add to cart' }, { status: 500 });
   }
 }
 
 export async function DELETE(req) {
   try {
-    const userId = await authenticate(req);
-    if (!userId) {
+    const user = await authenticate(req);
+    if (!user) {
       console.error("Cart DELETE: No authenticated user, returning empty response");
-      return Response.json({ items: [] });
+      return Response.json({ items: [], message: 'Unauthorized' }, { status: 401 });
     }
 
     const { productId } = await req.json();
@@ -117,34 +157,39 @@ export async function DELETE(req) {
       return Response.json({ message: "ProductId is required" }, { status: 400 });
     }
 
+    try {
+      new ObjectId(productId); // Validate ObjectId format
+    } catch {
+      return Response.json({ message: 'Invalid productId format' }, { status: 400 });
+    }
+
     const { db } = await connectToDatabase();
     const cartsCollection = db.collection("carts");
     const productsCollection = db.collection("products");
 
-    const cart = await cartsCollection.findOne({ userId: new ObjectId(userId) });
+    const cart = await cartsCollection.findOne({ userId: new ObjectId(user.id) });
     if (!cart) {
-      console.log(`Cart DELETE: No cart found for user ${userId}, returning empty response`);
-      return Response.json({ items: [] });
+      console.log(`Cart DELETE: No cart found for user ${user.id}, returning empty response`);
+      return Response.json({ items: [], message: 'Cart is empty' });
     }
 
-    // ✅ Remove only the matching item
     const updatedItems = cart.items.filter(
       (item) => item.productId.toString() !== productId
     );
 
     await cartsCollection.updateOne(
-      { userId: new ObjectId(userId) },
+      { userId: new ObjectId(user.id) },
       { $set: { items: updatedItems, updatedAt: new Date() } }
     );
 
-    // ✅ Return updated cart items with product details
     const itemsWithDetails = await Promise.all(
       updatedItems.map(async (item) => {
         const product = await productsCollection.findOne({ _id: new ObjectId(item.productId) });
         return {
-          ...item,
+          productId: item.productId.toString(),
+          quantity: item.quantity,
           product: product || {
-            _id: item.productId,
+            _id: item.productId.toString(),
             title: "Unknown Product",
             price: 0,
             imageUrl: "/placeholder.jpg",
@@ -153,10 +198,10 @@ export async function DELETE(req) {
       })
     );
 
-    console.log(`Item ${productId} removed successfully for user ${userId}`);
+    console.log(`Item ${productId} removed successfully for user ${user.id}`);
     return Response.json({ items: itemsWithDetails, message: "Item removed successfully" });
   } catch (error) {
     console.error("Cart DELETE error:", error.message);
-    return Response.json({ message: "Failed to remove item", items: [] }, { status: 400 });
+    return Response.json({ message: "Failed to remove item", items: [] }, { status: 500 });
   }
 }
